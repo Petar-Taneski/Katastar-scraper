@@ -6,9 +6,10 @@ type Props = {
   value: { region: string; katastar_region?: string; parcel: string };
   onChange: (idx: number, field: "region" | "katastar_region" | "parcel", v: string) => void;
   onRemove: (idx: number) => void;
+    isDeleteDisabled: boolean; // New prop to control delete button state
 };
 
-export default function JobRow({ idx, value, onChange, onRemove }: Props) {
+export default function JobRow({ idx, value, onChange, onRemove, isDeleteDisabled }: Props) {
   useEffect(() => {
     // could auto-focus first row, etc.
   }, []);
@@ -45,15 +46,22 @@ export default function JobRow({ idx, value, onChange, onRemove }: Props) {
         />
       </div>
 
-      <div className="flex md:justify-end gap-2">
-        <button
-          type="button"
-          onClick={() => onRemove(idx)}
-          className="w-full md:w-auto rounded-xl border border-red-200 text-red-700 px-4 py-2 hover:bg-red-50 transition"
-        >
-          Избриши
-        </button>
-      </div>
+     <div className="flex md:justify-end gap-2">
+  <button
+    type="button"
+    onClick={() => onRemove(idx)}
+    // 1. Add the disabled attribute
+    disabled={isDeleteDisabled} 
+    className={`w-full md:w-auto rounded-xl border border-red-200 text-red-700 px-4 py-2 transition ${
+      // 2. Conditionally apply styling for the disabled state
+      isDeleteDisabled 
+        ? 'opacity-50 cursor-not-allowed bg-white' // Disabled look (lower opacity, no hover)
+        : 'hover:bg-red-50' // Regular hover effect when active
+    }`}
+  >
+    Избриши
+  </button>
+</div>
     </div>
   );
 }
