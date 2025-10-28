@@ -10,6 +10,10 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.common.keys import Keys
+from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
+import time
+
 from webdriver_manager.chrome import ChromeDriverManager
 
 from openpyxl import Workbook
@@ -36,8 +40,84 @@ def get_region_suggestions(driver, wait, region_text):
 
     return driver.find_elements(By.CSS_SELECTOR, "li[role='option']")
 
+def select_parcel(driver, wait, parcel_text, attempts=3):
+    """
+    Type parcel_text into 'Внеси парцела', then select a matching option from the MUI popper.
+    Retries a few times because suggestions can be delayed/debounced.
+    Returns True if a suggestion was selected or ENTER accepted; False otherwise.
+    """
+    for attempt in range(1, attempts + 1):
+        # Focus + type
+        parcel_input = wait.until(EC.element_to_be_clickable(
+            (By.CSS_SELECTOR, "input[placeholder='Внеси парцела']")))
+        parcel_input.send_keys(Keys.CONTROL, "a")
+        parcel_input.send_keys(Keys.DELETE)
+        parcel_input.send_keys(parcel_text)
 
-def select_parcel(driver, wait, parcel_text):
+        # Give MUI a breath to render the popper
+        time.sleep(0.25)
+
+        # Wait for the popper with options
+        try:
+            # The popper wrapper
+            popper = wait.until(EC.presence_of_element_located(
+                (By.CSS_SELECTOR, ".MuiAutocomplete-popper")))
+            # Now the listbox options inside the popper
+            options = wait.until(EC.presence_of_all_elements_located(
+                (By.CSS_SELECTOR, ".MuiAutocomplete-popper [role='option']")))
+        except TimeoutException:
+            # Retry by clearing + retyping on next loop
+            if attempt == attempts:
+                # last resort: press Enter and hope it accepts
+                parcel_input.send_keys(Keys.ENTER)
+                time.sleep(0.3)
+                # Check if we navigated to parcels page (table present)
+                try:
+                    wait.until(EC.presence_of_element_located(
+                        (By.CSS_SELECTOR, "tr.parcels-table-body-row")))
+                    return True
+                except TimeoutException:
+                    return False
+            continue
+
+        # Pick the best option:
+        # 1) exact or contains match (strip spaces), else just first option
+        chosen = None
+        norm_target = parcel_text.strip()
+        try:
+            for opt in options:
+                txt = (opt.text or "").strip()
+                if norm_target == txt or norm_target in txt:
+                    chosen = opt
+                    break
+        except StaleElementReferenceException:
+            # options re-rendered; retry loop
+            continue
+
+        if chosen is None and options:
+            chosen = options[0]
+
+        # Click via JS to avoid overlay issues
+        try:
+            driver.execute_script("arguments[0].scrollIntoView({block:'center'});", chosen)
+            driver.execute_script("arguments[0].click();", chosen)
+        except Exception:
+            # fallback: hit Enter if clicking fails
+            parcel_input.send_keys(Keys.ENTER)
+
+        # After selection, wait for parcels table to be present
+        try:
+            wait.until(EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "tr.parcels-table-body-row")))
+            return True
+        except TimeoutException:
+            # Maybe it didn’t take; try again
+            if attempt == attempts:
+                return False
+            time.sleep(0.3)
+
+    return False
+
     """
     Enters parcel_text into 'Внеси парцела', clicks a suggestion if present.
     Returns True if a suggestion was clicked; otherwise False.
