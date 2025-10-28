@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import sys
 import argparse
 import re
@@ -9,6 +8,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill
+#!/usr/bin/env python3
 
 def get_region_suggestions(driver, wait, region_text):
     region_input = wait.until(EC.element_to_be_clickable(
@@ -93,6 +95,98 @@ def extract_parcel_and_holders(driver, wait):
         wait.until(EC.presence_of_all_elements_located(
             (By.CSS_SELECTOR, "tr.parcels-table-body-row")))
     return result
+
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill
+
+def write_results_to_excel(region_results, filename="results.xlsx"):
+    """
+    Write all data to a single sheet with hierarchical indentation:
+      - Region suggestion rows are bold and shaded.
+      - Parcel rows are indented once.
+      - Right-holder rows are indented twice.
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "results"
+
+    # Optional header row
+    ws.append([
+        "Input Region", "Input Parcel", "Kat. Odd. (Region Suggestion)",
+        "Имотен лист", "Број/дел", "Култура", "Површина m2",
+        "Место", "Право", "Име и презиме",
+        "Град", "Улица", "Број", "Дел на посед"
+    ])
+    header_font = Font(bold=True)
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.alignment = Alignment(wrap_text=True)
+
+    # Define styles
+    region_font = Font(bold=True)
+    region_fill = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
+    parcel_alignment = Alignment(indent=1, wrap_text=True)
+    holder_alignment = Alignment(indent=2, wrap_text=True)
+
+    # Start writing data from the second row
+    row_num = 2
+    for entry in region_results:
+        region_name = entry["region_name"]
+        input_region = entry.get("input_region")
+        input_parcel = entry.get("input_parcel")
+
+        # Region row
+        ws.append([
+            input_region, input_parcel, region_name,
+            "", "", "", "", "", "", "", "", "", "", ""
+        ])
+        for cell in ws[row_num]:
+            cell.font = region_font
+            cell.fill = region_fill
+            cell.alignment = Alignment(wrap_text=True)
+        row_num += 1
+
+        # Parcel and holder rows
+        for parcel in entry["parcels"]:
+            ws.append([
+                "", "", "",               # blank for indent + region context
+                parcel["Имотен лист"],
+                parcel["Број/дел"],
+                parcel["Култура"],
+                parcel["Површина m2"],
+                parcel["Место"],
+                parcel["Право"],
+                "", "", "", "", ""        # holder columns empty for parcel row
+            ])
+            for i, cell in enumerate(ws[row_num][0:9]):  # apply indent to first 9 cells
+                cell.alignment = parcel_alignment
+            row_num += 1
+
+            for holder in parcel["Носители на право"]:
+                ws.append([
+                    "", "", "", "",
+                    "", "", "", "", "",
+                    holder["Име и презиме"],
+                    holder["Град"],
+                    holder["Улица"],
+                    holder["Број"],
+                    holder["Дел на посед"]
+                ])
+                for cell in ws[row_num]:
+                    cell.alignment = holder_alignment
+                row_num += 1
+
+    # Autosize columns (optional)
+    for col in ws.columns:
+        max_length = 0
+        column = col[0].column_letter
+        for cell in col:
+            if cell.value:
+                max_length = max(max_length, len(str(cell.value)))
+        ws.column_dimensions[column].width = max_length + 2
+
+    wb.save(filename)
+
 
 def scrape_katastar(region, parcel):
     options = webdriver.ChromeOptions()
@@ -196,7 +290,7 @@ if __name__ == "__main__":
         all_results.extend(region_results)
 
     if all_results:
-        write_results_to_file(all_results, "results.txt")
-        print(f"Results written to results.txt for {len(all_results)} region suggestion(s) across {len(pairs_to_process)} input pair(s).")
+        write_results_to_excel(all_results, "results.xlsx")
+        print(f"Results written to results.xlsx for {len(all_results)} region suggestion(s) across {len(pairs_to_process)} input pair(s).")
     else:
         print("No results found.")
