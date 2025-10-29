@@ -363,7 +363,7 @@ export default function Page() {
               className="rounded-2xl bg-indigo-600 text-white px-5 py-2 hover:bg-indigo-700 transition"
               onClick={handleSubmit}
             >
-              Пребарај ({getJobCount()} ред/и)
+              Пребарај ({getJobCount()} ред/редици)
             </button>
           )}
 
